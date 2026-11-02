@@ -58,7 +58,8 @@ export const Effects: React.FC = () => {
     <EffectComposer disableNormalPass multisampling={0}>
       {/* Tighter bloom to avoid fog: High threshold, moderate radius */}
       <Bloom 
-        luminanceThreshold={0.75} 
+        luminanceThreshold={0.9}
+        luminanceSmoothing={0.05}
         mipmapBlur 
         intensity={1.05} 
         radius={0.62}

@@ -183,7 +183,7 @@ export const HUD: React.FC = () => {
 
   if (status === GameStatus.MENU) {
       return (
-          <div className="absolute inset-0 flex items-center justify-center z-[100] bg-slate-950/80 backdrop-blur-md p-4 pointer-events-auto">
+          <div className="absolute inset-0 flex items-end md:items-center justify-center md:justify-start z-[100] bg-gradient-to-t from-slate-950/95 via-slate-950/40 to-transparent md:bg-gradient-to-r md:from-slate-950/90 md:via-slate-950/45 md:to-transparent p-4 md:pl-[7vw] pointer-events-auto">
               <div className="relative w-full max-w-lg">
                   {/* Ambient Emerald/Teal Glow behind card (from billing.smit34.ru hero) */}
                   <div className="absolute -inset-1.5 bg-gradient-to-r from-emerald-500/25 to-teal-500/25 rounded-3xl blur-xl pointer-events-none"></div>
@@ -191,7 +191,7 @@ export const HUD: React.FC = () => {
                   {/* Signature billing.smit34.ru Glass Card */}
                   <div className="smit-glass-card relative rounded-2xl shadow-2xl p-6 sm:p-7 overflow-hidden">
                       {/* Top Terminal Window Bar from billing.smit34.ru */}
-                      <div className="flex items-center justify-between pb-4 border-b border-slate-800/80 mb-5">
+                      <div className="hidden sm:flex items-center justify-between pb-4 border-b border-slate-800/80 mb-5">
                           <div className="flex items-center gap-2">
                               <span className="w-3 h-3 rounded-full bg-red-500/80"></span>
                               <span className="w-3 h-3 rounded-full bg-amber-500/80"></span>
@@ -203,29 +203,8 @@ export const HUD: React.FC = () => {
                           </span>
                       </div>
 
-                      {/* Brand Header & SMIT Letters */}
+                      {/* Заголовок (логотип и буквы SMIT убраны по просьбе владельца) */}
                       <div className="flex flex-col items-center text-center mb-5">
-                          <div className="mb-3">
-                              <SmitBrandHeader subtitle="Оптическая магистраль GPON · Кибер-Раннер" />
-                          </div>
-
-                          <div className="inline-flex space-x-2.5 my-2">
-                              {['S', 'M', 'I', 'T'].map((ch, idx) => (
-                                  <span
-                                      key={ch}
-                                      style={{
-                                          borderColor: GEMINI_COLORS[idx],
-                                          boxShadow: `0 0 18px ${GEMINI_COLORS[idx]}44`,
-                                          backgroundColor: 'rgba(15, 23, 42, 0.85)',
-                                          color: GEMINI_COLORS[idx]
-                                      }}
-                                      className="w-12 h-13 md:w-13 md:h-14 flex items-center justify-center border-2 rounded-xl font-cyber font-black text-2xl md:text-3xl"
-                                  >
-                                      {ch}
-                                  </span>
-                              ))}
-                          </div>
-
                           <h1 className="text-2xl sm:text-3xl font-black font-cyber tracking-wide text-white mt-2">
                               СКОРОСТЬ БЕЗ ГРАНИЦ
                           </h1>
@@ -261,32 +240,8 @@ export const HUD: React.FC = () => {
                           <Play className="w-5 h-5 fill-white" />
                       </button>
 
-                      {/* Custom Tripo3D .GLB Robot Model Loader */}
-                      <div className="mt-3 w-full flex items-center justify-center gap-2">
-                          <label className="cursor-pointer flex-1 inline-flex items-center justify-center px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-300 text-xs font-semibold transition-colors">
-                              {customModelName ? `3D-МОДЕЛЬ: ${customModelName.slice(0, 20)}` : 'ЗАГРУЗИТЬ 3D-РОБОТА (.GLB)'}
-                              <input
-                                  type="file"
-                                  accept=".glb,.gltf"
-                                  onChange={handleModelFileUpload}
-                                  className="hidden"
-                              />
-                          </label>
-                          {customRobotModelUrl && (
-                              <button
-                                  onClick={() => {
-                                      setCustomRobotModelUrl(null);
-                                      setCustomModelName(null);
-                                  }}
-                                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600/50 text-slate-300 text-xs font-semibold cursor-pointer"
-                              >
-                                  СБРОС
-                              </button>
-                          )}
-                      </div>
-
                       {/* Feature Checklist Footer (matching billing.smit34.ru hero checklist) */}
-                      <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-2 text-[11px] text-slate-400">
+                      <div className="hidden sm:grid mt-5 pt-4 border-t border-slate-800/80 grid-cols-3 gap-2 text-[11px] text-slate-400">
                           <div className="flex items-center justify-center gap-1.5">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                               <span className="truncate">Оптика GPON</span>

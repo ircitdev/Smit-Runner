@@ -4,15 +4,23 @@
 */
 
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useStore } from '../../store';
 import { GameStatus } from '../../types';
 import { runtime } from '../../sim/runtime';
 import { ThrusterParticles } from './ThrusterParticles';
 
 // Полоса, прыжок, удары — в ядре (sim/core.js); здесь отрисовка и ввод.
+
+// Робот СмИТ по умолчанию: модель Tripo с ригом Mixamo и анимациями (бег, прыжок, удар,
+// поражение, покой, приветствие, танец) — собрана tools/pack-robot.mjs. Пока грузится или если
+// не загрузилась — рисованный кодом робот ниже. Свою модель можно загрузить из меню (.glb).
+const DEFAULT_ROBOT_URL = './models/robot.glb';
+type Clip = 'run' | 'jump' | 'hit' | 'defeat' | 'idle' | 'greet' | 'dance' | 'pose';
 
 // --- Multi-Part Articulated Cyber-Robot Geometries ---
 // Head & Helmet
@@ -74,22 +82,34 @@ export const Player: React.FC = () => {
     customRobotModelUrl
   } = useStore();
 
-  // Optional Custom GLB Model Loader (for exported Tripo3D .glb files)
+  // GLB-модель робота: своя из меню или модель СмИТ по умолчанию
   const [customScene, setCustomScene] = useState<THREE.Group | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const actionsRef = useRef<Partial<Record<Clip, THREE.AnimationAction>>>({});
+  const currentClip = useRef<Clip | null>(null);
+  const wasJumping = useRef(false);
+  const modelUrl = customRobotModelUrl || DEFAULT_ROBOT_URL;
+
+  // Белая броня должна блестеть белым, а не окрашиваться зелёным светом трассы:
+  // модели — своё отражение нейтральной «студии» (остальная сцена его не получает)
+  const { gl } = useThree();
+  const studioEnv = useMemo(() => {
+    const pm = new THREE.PMREMGenerator(gl);
+    const tex = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+    return tex;
+  }, [gl]);
 
   useEffect(() => {
-    if (!customRobotModelUrl) {
-      setCustomScene(null);
-      mixerRef.current = null;
-      return;
-    }
-
+    let cancelled = false;
     const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
     loader.load(
-      customRobotModelUrl,
+      modelUrl,
       (gltf) => {
-        const root = gltf.scene.clone(true);
+        if (cancelled) return;
+        // сцена загрузчика — своя у каждой загрузки; clone(true) порвал бы привязку кожи к костям
+        const root = gltf.scene;
         // Normalize bounding box to 1.8 units tall and ground feet at y = 0
         const box = new THREE.Box3().setFromObject(root);
         const size = new THREE.Vector3();
@@ -118,13 +138,29 @@ export const Player: React.FC = () => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
+            const mats = ([] as THREE.Material[]).concat((child as THREE.Mesh).material);
+            for (const m of mats) {
+              const sm = m as THREE.MeshStandardMaterial;
+              if (sm.isMeshStandardMaterial) {
+                sm.envMap = studioEnv;
+                sm.envMapIntensity = 0.7;
+                sm.needsUpdate = true;
+              }
+            }
           }
         });
 
+        actionsRef.current = {};
+        currentClip.current = null;
         if (gltf.animations && gltf.animations.length > 0) {
           const mixer = new THREE.AnimationMixer(root);
-          const action = mixer.clipAction(gltf.animations[0]);
-          action.play();
+          for (const clip of gltf.animations) {
+            actionsRef.current[clip.name as Clip] = mixer.clipAction(clip);
+          }
+          // чужая модель с одной безымянной анимацией — просто крутим её
+          if (!actionsRef.current.run) {
+            actionsRef.current.run = mixer.clipAction(gltf.animations[0]);
+          }
           mixerRef.current = mixer;
         } else {
           mixerRef.current = null;
@@ -134,10 +170,28 @@ export const Player: React.FC = () => {
       },
       undefined,
       () => {
-        setCustomScene(null);
+        if (!cancelled) setCustomScene(null);   // остаётся рисованный робот
       }
     );
-  }, [customRobotModelUrl]);
+    return () => { cancelled = true; };
+  }, [modelUrl, studioEnv]);
+
+  /** Плавный переход на анимацию; once — сыграть один раз и замереть в последней позе,
+   *  restart — начать заново, даже если она уже идёт (новый прыжок). */
+  const playClip = (name: Clip, once = false, timeScale = 1, restart = false) => {
+    const actions = actionsRef.current;
+    const next = actions[name] || (name === 'greet' ? actions.idle : undefined) || actions.run;
+    if (!next) return;
+    if (currentClip.current === name && !restart) { next.timeScale = timeScale; return; }
+    const prev = currentClip.current ? actions[currentClip.current] : undefined;
+    if (prev && prev !== next) prev.fadeOut(0.18);
+    next.reset();
+    next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+    next.clampWhenFinished = once;
+    next.timeScale = timeScale;
+    next.fadeIn(prev && prev !== next ? 0.18 : 0).play();
+    currentClip.current = name;
+  };
 
   const spinRotation = useRef(0);
   const touchStartX = useRef(0);
@@ -250,11 +304,40 @@ export const Player: React.FC = () => {
   // Animation Loop
   useFrame((state, delta) => {
     if (!groupRef.current) return;
-    if (status !== GameStatus.PLAYING && status !== GameStatus.SHOP) return;
 
+    // анимации модели — и в меню, и после партии (иначе робот застывает)
     if (mixerRef.current) {
-      mixerRef.current.update(delta * (isSpeedBoostActive ? 1.5 : 1.0));
+      const p0 = status === GameStatus.PLAYING ? runtime.player() : null;
+      if (status === GameStatus.GAME_OVER) playClip('defeat', true);
+      else if (status === GameStatus.VICTORY) playClip('dance');
+      else if (status === GameStatus.MENU) {
+        // заставка: приветствие, затем поза
+        const greet = actionsRef.current.greet;
+        if (currentClip.current !== 'greet' && currentClip.current !== 'pose') playClip('greet', true);
+        else if (currentClip.current === 'greet' && greet && greet.time >= greet.getClip().duration - 0.1) playClip('pose');
+      }
+      else if (status === GameStatus.SHOP) playClip('idle');
+      else if (p0 && p0.jumping) {
+        // прыжок длится ~0,64 с — клип ужат под него; второй прыжок начинает его заново
+        const clip = actionsRef.current.jump?.getClip();
+        playClip('jump', true, clip ? clip.duration / 0.8 : 1, !wasJumping.current);
+      } else {
+        playClip('run', false, isSpeedBoostActive ? 1.45 : 1.0);
+      }
+      wasJumping.current = !!(p0 && p0.jumping);
+      mixerRef.current.update(Math.min(delta, 0.05));
     }
+
+    if (status === GameStatus.MENU) {
+      // на заставке робот стоит в центре лицом к камере
+      groupRef.current.position.set(0, 0, 0);
+      groupRef.current.rotation.set(0, Math.PI, 0);
+      groupRef.current.visible = true;
+      if (bodyRef.current) { bodyRef.current.rotation.x = 0; bodyRef.current.position.y = 1.1; }
+      return;
+    }
+    if (status !== GameStatus.PLAYING && status !== GameStatus.SHOP) return;
+    groupRef.current.rotation.y = 0;
 
     const p = runtime.player();
     if (!p) return;
@@ -391,6 +474,12 @@ export const Player: React.FC = () => {
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
+      {/* белый свет со стороны камеры: на заставке группа развёрнута к камере (поэтому -Z), в забеге камера сзади (+Z) */}
+      {status === GameStatus.MENU ? (
+        <pointLight position={[0.6, 1.9, -1.5]} intensity={3} distance={7} decay={1.6} color="#ffffff" />
+      ) : (
+        <pointLight position={[0.4, 2.4, 1.8]} intensity={2.2} distance={6} decay={1.6} color="#ffffff" />
+      )}
       <group ref={bodyRef} position={[0, 1.1, 0]}>
         {customScene ? (
           <group>

@@ -14,7 +14,7 @@ import { ObstacleManager } from './components/World/ObstacleManager';
 import { Effects } from './components/World/Effects';
 import { HUD } from './components/UI/HUD';
 import { useStore } from './store';
-import { BASE_FOV, BOOST_FOV } from './types';
+import { BASE_FOV, BOOST_FOV, GameStatus } from './types';
 import { runtime } from './sim/runtime';
 
 // Шаги правил (60 в секунду) — первыми в кадре, до отрисовки объектов
@@ -24,12 +24,14 @@ const SimDriver = () => {
 };
 
 const _targetPos = new THREE.Vector3();
+const _menuLook = new THREE.Vector3();
 
 // Dynamic Camera Controller
 const CameraController = () => {
   const { camera, size } = useThree();
-  const { laneCount, isSpeedBoostActive, multiplier } = useStore();
+  const { laneCount, isSpeedBoostActive, multiplier, status } = useStore();
   const shakeIntensityRef = React.useRef(0);
+  const lookRef = React.useRef(new THREE.Vector3(0, 0, -30));
 
   React.useEffect(() => {
     const handleExplosion = () => {
@@ -44,6 +46,21 @@ const CameraController = () => {
     // Determine if screen is narrow (mobile portrait)
     const aspect = size.width / size.height;
     const isMobile = aspect < 1.2; // Threshold for "mobile-like" narrowness or square-ish displays
+
+    // Заставка главного экрана: робот по пояс, лицом к камере.
+    // ПК — справа от карточки меню, телефон — над карточкой (она внизу экрана).
+    if (status === GameStatus.MENU) {
+      if (isMobile) { _targetPos.set(0, 1.25, 2.9); _menuLook.set(0, 0.95, 0); }
+      else { _targetPos.set(-0.5, 1.5, 1.4); _menuLook.set(-0.5, 1.42, 0); }
+      camera.position.lerp(_targetPos, safeDelta * 3.0);
+      lookRef.current.lerp(_menuLook, safeDelta * 3.0);
+      if (camera instanceof THREE.PerspectiveCamera && Math.abs(camera.fov - 45) > 0.05) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, 45, safeDelta * 4.0);
+        camera.updateProjectionMatrix();
+      }
+      camera.lookAt(lookRef.current);
+      return;
+    }
 
     // Calculate expansion factors
     const heightFactor = isMobile ? 2.0 : 0.5;
@@ -79,7 +96,10 @@ const CameraController = () => {
       }
     }
 
-    camera.lookAt(shakeX * 0.35, 0, -30); 
+    // после заставки взгляд плавно возвращается на трассу
+    _menuLook.set(shakeX * 0.35, 0, -30);
+    lookRef.current.lerp(_menuLook, Math.min(1, safeDelta * 4.0));
+    camera.lookAt(lookRef.current); 
   });
   
   return null;
@@ -108,7 +128,7 @@ function App() {
       <HUD />
       <Canvas
         shadows
-        dpr={[1, 1.5]} 
+        dpr={[1, 1.75]} 
         gl={{ antialias: false, stencil: false, depth: true, powerPreference: "high-performance" }}
         // Initial camera, matches the controller base
         camera={{ position: [0, 5.5, 8], fov: 60 }}
