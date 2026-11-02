@@ -78,9 +78,6 @@ const ShopScreen: React.FC = () => {
     return (
         <div className="absolute inset-0 bg-slate-950/90 z-[100] text-slate-100 pointer-events-auto backdrop-blur-md overflow-y-auto">
              <div className="flex flex-col items-center justify-center min-h-full py-8 px-4 max-w-5xl mx-auto">
-                 <div className="mb-3">
-                     <SmitBrandHeader subtitle="Маркетплейс модулей и апгрейдов" />
-                 </div>
                  <h2 className="text-2xl md:text-4xl font-black text-white mb-2 font-cyber tracking-wide text-center">
                      МОДУЛИ СмИТ БИЛЛИНГ
                  </h2>
@@ -266,11 +263,6 @@ export const HUD: React.FC = () => {
           <div className="absolute inset-0 bg-slate-950/90 z-[100] text-slate-100 pointer-events-auto backdrop-blur-md overflow-y-auto">
               <div className="flex flex-col items-center justify-center min-h-full py-8 px-4">
                 <div className="smit-glass-card w-full max-w-md rounded-2xl p-6 sm:p-7">
-                    <div className="flex items-center justify-between pb-4 border-b border-slate-800/80 mb-5">
-                        <SmitBrandHeader subtitle="Отчёт сессии абонента" />
-                        <span className="text-xs font-mono text-rose-400">ОБРЫВ ЛИНИИ</span>
-                    </div>
-
                     <h1 className="text-3xl md:text-4xl font-black text-white mb-5 font-cyber text-center">
                         СЕССИЯ ЗАВЕРШЕНА
                     </h1>
