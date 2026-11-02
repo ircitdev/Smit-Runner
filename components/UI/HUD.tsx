@@ -134,6 +134,7 @@ export const HUD: React.FC = () => {
     level,
     restartGame,
     startGame,
+    setStatus,
     gemsCollected,
     distance,
     maxDistance,
@@ -217,7 +218,7 @@ export const HUD: React.FC = () => {
                                   <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                                   РЕКОРД:
                               </span>
-                              <strong className="text-emerald-400 tabular-nums">{Math.floor(maxDistance)} СВ. Л.</strong>
+                              <strong className="text-emerald-400 tabular-nums whitespace-nowrap">{Math.floor(maxDistance)} СВ. Л.</strong>
                           </div>
                           <div className="px-3.5 py-2.5 rounded-xl bg-slate-900/75 border border-teal-500/25 flex items-center justify-between">
                               <span className="text-slate-400 flex items-center gap-1.5">
@@ -281,7 +282,7 @@ export const HUD: React.FC = () => {
                             <div className="text-lg font-bold font-mono text-emerald-400 tabular-nums">{maxCombo}</div>
                         </div>
                         <div className="bg-slate-900/75 p-3 rounded-xl border border-teal-500/30 flex items-center justify-between">
-                            <div className="flex items-center text-teal-300 text-sm"><Award className="mr-2 w-4 h-4"/> ОТКРЫТО ДОСТИЖЕНИЙ</div>
+                            <div className="flex items-center text-teal-300 text-sm"><Award className="mr-2 w-4 h-4"/> ДОСТИЖЕНИЯ</div>
                             <div className="text-lg font-bold font-mono text-teal-300 tabular-nums">{sessionAchievements.length} (ВСЕГО {unlockedAchievements.length}/{ACHIEVEMENTS.length})</div>
                         </div>
                         <div className="bg-slate-900/75 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
@@ -303,6 +304,13 @@ export const HUD: React.FC = () => {
                       className="smit-glass-tint w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-base md:text-lg rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all shadow-lg shadow-emerald-500/25 cursor-pointer"
                     >
                         ПЕРЕПОДКЛЮЧИТЬСЯ
+                    </button>
+                    {/* «Завершить» — на главный экран (заставку), без нового забега */}
+                    <button
+                      onClick={() => { audio.init(); setStatus(GameStatus.MENU); }}
+                      className="w-full mt-3 py-3 rounded-xl bg-slate-900/70 hover:bg-slate-800 border border-slate-600/50 text-slate-200 font-bold text-sm md:text-base tracking-wider transition-colors cursor-pointer"
+                    >
+                        ЗАВЕРШИТЬ
                     </button>
                 </div>
               </div>
@@ -353,6 +361,13 @@ export const HUD: React.FC = () => {
                       className="smit-glass-tint w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-base md:text-lg rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all shadow-lg shadow-emerald-500/30 tracking-wider cursor-pointer"
                     >
                         НОВЫЙ ЗАПУСК
+                    </button>
+                    {/* «Завершить» — на главный экран (заставку), без нового забега */}
+                    <button
+                      onClick={() => { audio.init(); setStatus(GameStatus.MENU); }}
+                      className="w-full mt-3 py-3 rounded-xl bg-slate-900/70 hover:bg-slate-800 border border-slate-600/50 text-slate-200 font-bold text-sm md:text-base tracking-wider transition-colors cursor-pointer"
+                    >
+                        ЗАВЕРШИТЬ
                     </button>
                 </div>
             </div>
