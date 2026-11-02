@@ -457,8 +457,8 @@ export const HUD: React.FC = () => {
                             <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-400" />
                             {Math.floor(distance)} СВ. Л.
                         </span>
-                        <span className="text-slate-600">·</span>
-                        <span className="text-amber-300/90 flex items-center">
+                        <span className="hidden md:inline text-slate-600">·</span>
+                        <span className="hidden md:flex text-amber-300/90 items-center">
                             <Trophy className="w-3.5 h-3.5 mr-1 text-amber-400" />
                             РЕКОРД {Math.floor(maxDistance)} СВ. Л.
                         </span>
@@ -518,6 +518,33 @@ export const HUD: React.FC = () => {
                     ))}
                 </div>
 
+                {/* Телефон: уровень и буквы SMIT под жизнями, а не по центру — иначе наезжают на карточку счёта */}
+                <div className="md:hidden flex flex-col items-end space-y-1.5">
+                    <div className="smit-glass-card px-2.5 py-1 rounded-lg text-[11px] text-emerald-300 font-bold tracking-wider font-mono">
+                        УРОВЕНЬ {level} <span className="text-slate-400">/ 3</span>
+                    </div>
+                    <div className="flex space-x-1">
+                        {target.map((char, idx) => {
+                            const isCollected = collectedLetters.includes(idx);
+                            const color = GEMINI_COLORS[idx];
+                            return (
+                                <div
+                                    key={idx}
+                                    style={{
+                                        borderColor: isCollected ? color : 'rgba(51, 65, 85, 0.8)',
+                                        color: isCollected ? '#020617' : 'rgba(100, 116, 139, 0.9)',
+                                        boxShadow: isCollected ? `0 0 12px ${color}` : 'none',
+                                        backgroundColor: isCollected ? color : 'rgba(15, 23, 42, 0.85)'
+                                    }}
+                                    className="w-6 h-7 flex items-center justify-center border-2 font-black text-sm font-cyber rounded-lg transition-all duration-300"
+                                >
+                                    {char}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
                 {/* Glitch-Animated In-Game Achievement Popup Banner */}
                 {activeAchievement && (
                     <div
@@ -553,12 +580,12 @@ export const HUD: React.FC = () => {
         </div>
         
         {/* Level Indicator - Top Center */}
-        <div className="absolute top-4 md:top-7 left-1/2 transform -translate-x-1/2 text-xs md:text-sm text-emerald-300 font-bold tracking-wider font-mono smit-glass-card px-3.5 py-1.5 rounded-xl z-50">
+        <div className="hidden md:block absolute top-4 md:top-7 left-1/2 transform -translate-x-1/2 text-xs md:text-sm text-emerald-300 font-bold tracking-wider font-mono smit-glass-card px-3.5 py-1.5 rounded-xl z-50">
             СмИТ 3.9 · УРОВЕНЬ {level} <span className="text-slate-400">/ 3</span>
         </div>
 
         {/* Active Skill / Power-up Indicators */}
-        <div className="absolute top-28 md:top-36 left-1/2 transform -translate-x-1/2 flex flex-col items-center space-y-2">
+        <div className="absolute top-[150px] md:top-36 left-1/2 transform -translate-x-1/2 flex flex-col items-center space-y-2">
             {isImmortalityActive && (
                  <div className="text-amber-300 font-bold text-lg md:text-2xl flex items-center drop-shadow-[0_0_10px_rgba(251,191,36,0.7)] font-cyber tracking-wider">
                      <Shield className="mr-2 w-5 h-5 md:w-6 md:h-6 fill-amber-400 text-amber-300" /> ЗАЩИТА АКТИВНА
@@ -572,7 +599,7 @@ export const HUD: React.FC = () => {
         </div>
 
         {/* SMIT Collection Status */}
-        <div className="absolute top-14 md:top-20 left-1/2 transform -translate-x-1/2 flex space-x-2 md:space-x-2.5">
+        <div className="absolute top-14 md:top-20 left-1/2 transform -translate-x-1/2 hidden md:flex space-x-2 md:space-x-2.5">
             {target.map((char, idx) => {
                 const isCollected = collectedLetters.includes(idx);
                 const color = GEMINI_COLORS[idx];
