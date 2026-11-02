@@ -6,17 +6,9 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '../../store';
-import {
-  GameObject,
-  ObjectType,
-  LANE_WIDTH,
-  SPAWN_DISTANCE,
-  REMOVE_DISTANCE,
-  GameStatus
-} from '../../types';
-import { audio } from '../System/Audio';
+import { GameObject, ObjectType } from '../../types';
+import { runtime } from '../../sim/runtime';
 
 // --- Shared Geometries for Diverse Dynamic Obstacles ---
 const SPIKE_CORE_GEO = new THREE.CylinderGeometry(0.32, 0.38, 1.7, 6);
@@ -44,8 +36,6 @@ const SHADOW_CIRCLE_GEO = new THREE.CircleGeometry(0.8, 24);
 const SHADOW_BARRIER_GEO = new THREE.PlaneGeometry(1.8, 0.7);
 const SHADOW_MISSILE_GEO = new THREE.PlaneGeometry(0.18, 3.0);
 
-const MISSILE_SPEED = 32;
-const _playerWorldPos = new THREE.Vector3();
 
 // --- Shared Beat-Synced Shader Uniforms & Materials (128 BPM, matching Environment.tsx) ---
 const sharedObstacleUniforms = {
@@ -744,353 +734,25 @@ const ObstacleExplosionSystem: React.FC = () => {
   );
 };
 
+// Препятствия и ракеты: движение, столкновения, увороты и появление считает ядро
+// (sim/core.js); здесь — отрисовка runtime.obs и общие «ритмичные» параметры шейдеров.
 export const ObstacleManager: React.FC = () => {
-  const { status, speed, laneCount, level, distance, multiplier, registerDodge, isSpeedBoostActive } = useStore();
-
-  const obstaclesRef = useRef<GameObject[]>([]);
+  const multiplier = useStore(s => s.multiplier);
+  const isSpeedBoostActive = useStore(s => s.isSpeedBoostActive);
   const [, setRenderTrigger] = useState(0);
-  const prevStatus = useRef(status);
-  const prevLevel = useRef(level);
-  const playerObjRef = useRef<THREE.Object3D | null>(null);
-
-  // Handle game state resets and level-up transitions
-  useEffect(() => {
-    const isRestart = status === GameStatus.PLAYING && prevStatus.current === GameStatus.GAME_OVER;
-    const isMenuReset = status === GameStatus.MENU;
-    const isLevelUp = level !== prevLevel.current && status === GameStatus.PLAYING;
-    const isVictoryReset = status === GameStatus.PLAYING && prevStatus.current === GameStatus.VICTORY;
-
-    if (isMenuReset || isRestart || isVictoryReset) {
-      obstaclesRef.current = [];
-      setRenderTrigger(t => t + 1);
-    } else if (isLevelUp && level > 1) {
-      // Clear obstacles near the shop portal spawn area (-100) so the portal is unobstructed
-      obstaclesRef.current = obstaclesRef.current.filter(obj => obj.position[2] > -75);
-      setRenderTrigger(t => t + 1);
-    }
-
-    prevStatus.current = status;
-    prevLevel.current = level;
-  }, [status, level]);
-
-  // Locate player object reference once
-  useFrame((state) => {
-    if (!playerObjRef.current) {
-      const group = state.scene.getObjectByName('PlayerGroup');
-      if (group && group.children.length > 0) {
-        playerObjRef.current = group.children[0];
-      }
-    }
-  });
+  const seen = useRef(-1);
 
   useFrame((state, delta) => {
-    //Normalized combo intensity (0.0 at x1 up to 1.0 at x10)
+    // Normalized combo intensity (0.0 at x1 up to 1.0 at x10)
     const comboIntensity = Math.min(1.0, Math.max(0, (multiplier - 1) / 9));
-
-    // Always update shared rhythmic shader uniforms so obstacles pulse even on pause/shop
     sharedObstacleUniforms.uTime.value = state.clock.elapsedTime;
     sharedObstacleUniforms.uBoost.value = THREE.MathUtils.lerp(
       sharedObstacleUniforms.uBoost.value,
       isSpeedBoostActive ? 1.0 : comboIntensity * 0.65,
       Math.min(delta, 0.05) * 6.0
     );
-
-    if (status !== GameStatus.PLAYING) return;
-
-    const safeDelta = Math.min(delta, 0.05);
-    const distDelta = speed * safeDelta;
-    const elapsed = state.clock.elapsedTime;
-
-    // Adaptive difficulty factor driven by current combo multiplier, distance, and level
-    const difficulty = 1 + (distance / 320) + (level - 1) * 0.45 + (multiplier - 1) * 0.24;
-    const maxTrackX = Math.floor(laneCount / 2) * LANE_WIDTH;
-
-    if (playerObjRef.current) {
-      playerObjRef.current.getWorldPosition(_playerWorldPos);
-    }
-
-    let hasChanges = false;
-    const currentObstacles = obstaclesRef.current;
-    const keptObstacles: GameObject[] = [];
-    const newlySpawned: GameObject[] = [];
-
-    for (const obj of currentObstacles) {
-      let moveAmount = distDelta;
-
-      if (obj.type === ObjectType.MISSILE) {
-        moveAmount += (MISSILE_SPEED + difficulty * 2.5) * safeDelta;
-      }
-
-      const prevZ = obj.position[2];
-      obj.position[2] += moveAmount;
-
-      // Dynamic Lateral / Vertical Movement based on obstacle type, amplified slightly by combo intensity
-      const baseX = obj.initialX ?? obj.position[0];
-      const baseY = obj.initialY ?? obj.position[1];
-      const moveSpeed = (obj.moveSpeed ?? 2.0) * (1 + comboIntensity * 0.25);
-      const moveRange = obj.moveRange ?? LANE_WIDTH;
-      const phase = obj.phase ?? 0;
-
-      if (obj.type === ObjectType.MOVING_BARRIER) {
-        // Smoothly strafe across lanes, clamped within playable track boundaries
-        const targetX = baseX + Math.sin(elapsed * moveSpeed + phase) * moveRange;
-        obj.position[0] = THREE.MathUtils.clamp(targetX, -maxTrackX, maxTrackX);
-      } else if (obj.type === ObjectType.ROTATING_SPIKE && moveRange > 0) {
-        // Subtle lateral weave at higher distances / combo
-        const targetX = baseX + Math.sin(elapsed * moveSpeed + phase) * moveRange;
-        obj.position[0] = THREE.MathUtils.clamp(targetX, -maxTrackX, maxTrackX);
-      } else if (obj.type === ObjectType.LASER_SPINNER) {
-        // Vertical oscillation + slight lateral sway
-        obj.position[1] = baseY + Math.sin(elapsed * moveSpeed + phase) * 0.55;
-        if (moveRange > 0) {
-          const targetX = baseX + Math.cos(elapsed * (moveSpeed * 0.7) + phase) * moveRange;
-          obj.position[0] = THREE.MathUtils.clamp(targetX, -maxTrackX, maxTrackX);
-        }
-      } else if (obj.type === ObjectType.ALIEN) {
-        // Aliens strafe and fire missiles when in range
-        if (moveRange > 0) {
-          const targetX = baseX + Math.sin(elapsed * moveSpeed + phase) * moveRange;
-          obj.position[0] = THREE.MathUtils.clamp(targetX, -maxTrackX, maxTrackX);
-        }
-
-        if (obj.active && !obj.hasFired && obj.position[2] > -92) {
-          obj.hasFired = true;
-          newlySpawned.push({
-            id: uuidv4(),
-            type: ObjectType.MISSILE,
-            position: [obj.position[0], 1.0, obj.position[2] + 2.0],
-            active: true,
-            color: '#ff0033',
-            rotationSpeed: 22
-          });
-          hasChanges = true;
-
-          window.dispatchEvent(
-            new CustomEvent('particle-burst', {
-              detail: { position: obj.position, color: '#10b981' }
-            })
-          );
-        }
-      }
-
-      let keep = true;
-
-      // Swept collision detection against the player
-      if (obj.active) {
-        const zThreshold = 1.9;
-        const inZZone =
-          prevZ < _playerWorldPos.z + zThreshold &&
-          obj.position[2] > _playerWorldPos.z - zThreshold;
-
-        if (inZZone) {
-          // Moving barriers are slightly wider than single-lane spikes
-          const horizontalHitThreshold = obj.type === ObjectType.MOVING_BARRIER ? 1.15 : 0.92;
-          const dx = Math.abs(obj.position[0] - _playerWorldPos.x);
-
-          if (dx < horizontalHitThreshold) {
-            const playerBottom = _playerWorldPos.y;
-            const playerTop = _playerWorldPos.y + 1.8;
-
-            let objBottom = 0;
-            let objTop = 1.6;
-
-            if (obj.type === ObjectType.ROTATING_SPIKE) {
-              objBottom = 0;
-              objTop = 1.75;
-            } else if (obj.type === ObjectType.MOVING_BARRIER) {
-              objBottom = 0;
-              objTop = 1.5;
-            } else if (obj.type === ObjectType.LASER_SPINNER) {
-              objBottom = Math.max(0, obj.position[1] - 0.75);
-              objTop = obj.position[1] + 0.75;
-            } else if (obj.type === ObjectType.ALIEN) {
-              objBottom = obj.position[1] - 0.5;
-              objTop = obj.position[1] + 0.6;
-            } else if (obj.type === ObjectType.MISSILE) {
-              objBottom = 0.5;
-              objTop = 1.5;
-            }
-
-            const isHit = playerBottom < objTop && playerTop > objBottom;
-
-            if (isHit) {
-              window.dispatchEvent(new Event('player-hit'));
-              obj.active = false;
-              hasChanges = true;
-
-              const impactPosition: [number, number, number] = [
-                obj.position[0],
-                Math.max(0.95, obj.position[1]),
-                obj.position[2]
-              ];
-
-              window.dispatchEvent(
-                new CustomEvent('obstacle-explosion', {
-                  detail: {
-                    position: impactPosition,
-                    color: obj.color || '#ff0054',
-                    type: obj.type
-                  }
-                })
-              );
-
-              window.dispatchEvent(
-                new CustomEvent('particle-burst', {
-                  detail: {
-                    position: impactPosition,
-                    color: obj.color || '#ff0054'
-                  }
-                })
-              );
-            }
-          }
-        } else if (!obj.passed && obj.position[2] > _playerWorldPos.z + zThreshold) {
-          // Player successfully dodged this obstacle!
-          obj.passed = true;
-          const dx = Math.abs(obj.position[0] - _playerWorldPos.x);
-          const isCloseCall = dx <= LANE_WIDTH * 1.15;
-          registerDodge(isCloseCall);
-          const nextCombo = useStore.getState().combo;
-          audio.playDodge(nextCombo, isCloseCall);
-        }
-      }
-
-      if (obj.position[2] > REMOVE_DISTANCE) {
-        keep = false;
-        hasChanges = true;
-      }
-
-      if (keep) {
-        keptObstacles.push(obj);
-      }
-    }
-
-    if (newlySpawned.length > 0) {
-      keptObstacles.push(...newlySpawned);
-    }
-
-    // --- Adaptive Combo-Multiplier & Distance-Scaled Obstacle Spawning ---
-    const nonMissileObstacles = keptObstacles.filter(o => o.type !== ObjectType.MISSILE);
-    const furthestZ =
-      nonMissileObstacles.length > 0
-        ? Math.min(...nonMissileObstacles.map(o => o.position[2]))
-        : -25;
-
-    // Wave spacing compresses dynamically as combo multiplier and distance increase,
-    // while maintaining a physical minimum clearance for landing jumps
-    const distanceCompression = Math.min(8, distance / 140);
-    const comboCompression = (multiplier - 1) * 1.15; // Up to -10.35 units tighter at x10
-    const minGap = Math.max(10.5, 23 - distanceCompression - comboCompression + (speed * 0.22));
-
-    if (furthestZ > -SPAWN_DISTANCE) {
-      const spawnZ = Math.min(furthestZ - minGap, -SPAWN_DISTANCE);
-
-      const availableLanes: number[] = [];
-      const maxLane = Math.floor(laneCount / 2);
-      for (let i = -maxLane; i <= maxLane; i++) {
-        availableLanes.push(i);
-      }
-      availableLanes.sort(() => Math.random() - 0.5);
-
-      // Multi-lane obstacle density increases with combo multiplier (always leaving >=1 open lane)
-      const maxSimultaneous = Math.max(1, availableLanes.length - 1);
-      const multiSpawnChance = Math.min(0.88, 0.24 + (difficulty - 1) * 0.16 + comboIntensity * 0.36);
-      let countToSpawn = 1;
-
-      const roll = Math.random();
-      if (roll < multiSpawnChance && maxSimultaneous >= 2) {
-        countToSpawn = 2;
-        if (roll < multiSpawnChance * (0.4 + comboIntensity * 0.25) && maxSimultaneous >= 3) {
-          countToSpawn = 3;
-        }
-      }
-
-      for (let i = 0; i < countToSpawn; i++) {
-        const lane = availableLanes[i];
-        const laneX = lane * LANE_WIDTH;
-        const typeRoll = Math.random();
-
-        // Higher combo multipliers unlock and boost complex dynamic hazards earlier
-        const alienChance =
-          level >= 2 || distance > 250 || multiplier >= 4
-            ? Math.min(0.28, 0.08 + (difficulty - 1) * 0.05 + comboIntensity * 0.1)
-            : 0;
-        const spinnerChance =
-          distance > 60 || multiplier >= 2
-            ? Math.min(0.32, 0.12 + (difficulty - 1) * 0.05 + comboIntensity * 0.12)
-            : 0.1;
-        const barrierChance = 0.42;
-
-        if (typeRoll < alienChance) {
-          // Strafing Alien Saucer
-          const strafeRange = difficulty > 1.3 ? LANE_WIDTH * (0.7 + comboIntensity * 0.3) : 0;
-          keptObstacles.push({
-            id: uuidv4(),
-            type: ObjectType.ALIEN,
-            position: [laneX, 1.5, spawnZ],
-            initialX: laneX,
-            initialY: 1.5,
-            moveSpeed: 1.6 + difficulty * 0.45,
-            moveRange: strafeRange,
-            phase: Math.random() * Math.PI * 2,
-            active: true,
-            color: '#10b981',
-            hasFired: false
-          });
-        } else if (typeRoll < alienChance + spinnerChance) {
-          // Rotating & Vertically Oscillating Laser Spinner
-          keptObstacles.push({
-            id: uuidv4(),
-            type: ObjectType.LASER_SPINNER,
-            position: [laneX, 1.25, spawnZ],
-            initialX: laneX,
-            initialY: 1.25,
-            moveSpeed: 2.2 + difficulty * 0.5,
-            moveRange: difficulty > 1.6 ? LANE_WIDTH * 0.45 : 0,
-            phase: Math.random() * Math.PI * 2,
-            rotationSpeed: 4.5 + difficulty * 1.8,
-            active: true,
-            color: '#06b6d4'
-          });
-        } else if (typeRoll < alienChance + spinnerChance + barrierChance) {
-          // Moving Plasma Barrier (slides horizontally across lanes)
-          const sweepMultiplier = countToSpawn > 1 ? 0.65 : Math.min(1.5, 0.85 + (difficulty - 1) * 0.25);
-          keptObstacles.push({
-            id: uuidv4(),
-            type: ObjectType.MOVING_BARRIER,
-            position: [laneX, 0.8, spawnZ],
-            initialX: laneX,
-            initialY: 0.8,
-            moveSpeed: 1.8 + difficulty * 0.65,
-            moveRange: LANE_WIDTH * sweepMultiplier,
-            phase: Math.random() * Math.PI * 2,
-            active: true,
-            color: '#10b981'
-          });
-        } else {
-          // Rotating Cyber Spike Cluster
-          const weaveRange = (difficulty > 1.4 || multiplier >= 3) && countToSpawn === 1 ? LANE_WIDTH * 0.55 : 0;
-          keptObstacles.push({
-            id: uuidv4(),
-            type: ObjectType.ROTATING_SPIKE,
-            position: [laneX, 0.85, spawnZ],
-            initialX: laneX,
-            initialY: 0.85,
-            moveSpeed: 2.0 + difficulty * 0.5,
-            moveRange: weaveRange,
-            phase: Math.random() * Math.PI * 2,
-            rotationSpeed: 3.5 + difficulty * 1.6,
-            active: true,
-            color: '#ff0054'
-          });
-        }
-      }
-
-      hasChanges = true;
-    }
-
-    if (hasChanges) {
-      obstaclesRef.current = keptObstacles;
+    if (runtime.version !== seen.current) {
+      seen.current = runtime.version;
       setRenderTrigger(t => t + 1);
     }
   });
@@ -1098,10 +760,7 @@ export const ObstacleManager: React.FC = () => {
   return (
     <group name="ObstacleGroup">
       <ObstacleExplosionSystem />
-      {obstaclesRef.current.map(obj => {
-        if (!obj.active) return null;
-        return <ObstacleEntity key={obj.id} data={obj} />;
-      })}
+      {runtime.obs.map(obj => <ObstacleEntity key={obj.id} data={obj} />)}
     </group>
   );
 };

@@ -8,10 +8,9 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Text3D, Center, Float } from '@react-three/drei';
-import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '../../store';
-import { GameObject, ObjectType, LANE_WIDTH, SPAWN_DISTANCE, REMOVE_DISTANCE, GameStatus, GEMINI_COLORS } from '../../types';
-import { audio } from '../System/Audio';
+import { GameObject, ObjectType, LANE_WIDTH } from '../../types';
+import { runtime } from '../../sim/runtime';
 
 // Geometry Constants
 const OBSTACLE_HEIGHT = 1.6;
@@ -58,16 +57,6 @@ const SHOP_OUTLINE_GEO = new THREE.BoxGeometry(1, 7.2, 0.8); // Will be scaled
 const SHOP_FLOOR_GEO = new THREE.PlaneGeometry(1, 4); // Will be scaled
 
 const PARTICLE_COUNT = 600;
-const BASE_LETTER_INTERVAL = 150; 
-
-const getLetterInterval = (level: number) => {
-    // Level 1: 150
-    // Level 2: 225 (150 * 1.5)
-    // Level 3: 337.5 (225 * 1.5)
-    return BASE_LETTER_INTERVAL * Math.pow(1.5, Math.max(0, level - 1));
-};
-
-const MISSILE_SPEED = 30; // Extra speed added to world speed
 
 // Font for 3D Text
 const FONT_URL = "https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_bold.typeface.json";
@@ -166,276 +155,23 @@ const ParticleSystem: React.FC = () => {
 };
 
 
-const getRandomLane = (laneCount: number) => {
-    const max = Math.floor(laneCount / 2);
-    return Math.floor(Math.random() * (max * 2 + 1)) - max;
-};
-
+// Бонусы, буквы SMIT, ускорения и портал магазина: положение, сбор и появление
+// считает ядро (sim/core.js) — здесь только отрисовка того, что лежит в runtime.items.
 export const LevelManager: React.FC = () => {
-  const { 
-    status, 
-    speed, 
-    collectGem, 
-    collectLetter, 
-    collectSpeedBoost,
-    collectedLetters,
-    laneCount,
-    setDistance,
-    openShop,
-    level
-  } = useStore();
-  
-  const objectsRef = useRef<GameObject[]>([]);
-  const [renderTrigger, setRenderTrigger] = useState(0);
-  const prevStatus = useRef(status);
-  const prevLevel = useRef(level);
+  const [, setRenderTrigger] = useState(0);
+  const seen = useRef(-1);
 
-  const playerObjRef = useRef<THREE.Object3D | null>(null);
-  const distanceTraveled = useRef(0);
-  const lastReportedDistance = useRef(0);
-  const nextLetterDistance = useRef(BASE_LETTER_INTERVAL);
-
-  // Handle resets and transitions
-  useEffect(() => {
-    const isRestart = status === GameStatus.PLAYING && prevStatus.current === GameStatus.GAME_OVER;
-    const isMenuReset = status === GameStatus.MENU;
-    const isLevelUp = level !== prevLevel.current && status === GameStatus.PLAYING;
-    const isVictoryReset = status === GameStatus.PLAYING && prevStatus.current === GameStatus.VICTORY;
-
-    if (isMenuReset || isRestart || isVictoryReset) {
-        // Hard Reset of objects
-        objectsRef.current = [];
-        setRenderTrigger(t => t + 1);
-        
-        // Reset trackers
-        distanceTraveled.current = 0;
-        lastReportedDistance.current = 0;
-        nextLetterDistance.current = getLetterInterval(1);
-
-    } else if (isLevelUp && level > 1) {
-        // Soft Reset for Level Up (Keep visible objects)
-        // Clear objects deep in the fog (> -80) to make room for portal, but keep visible ones
-        objectsRef.current = objectsRef.current.filter(obj => obj.position[2] > -80);
-
-        // Spawn Shop Portal further out (Twice previous distance)
-        objectsRef.current.push({
-            id: uuidv4(),
-            type: ObjectType.SHOP_PORTAL,
-            position: [0, 0, -100], 
-            active: true,
-        });
-        
-        // Adjust next letter spawn for the new level's difficulty (50% increase).
-        // We calculate this relative to where the last letter was (which was approx at player position + 0, so SPAWN_DISTANCE ago).
-        // This ensures the gap between the last letter of Level X and the first letter of Level X+1 is the new interval.
-        nextLetterDistance.current = distanceTraveled.current - SPAWN_DISTANCE + getLetterInterval(level);
-        
-        setRenderTrigger(t => t + 1);
-        
-    } else if (status === GameStatus.GAME_OVER || status === GameStatus.VICTORY) {
-        setDistance(Math.floor(distanceTraveled.current));
-    }
-    
-    prevStatus.current = status;
-    prevLevel.current = level;
-  }, [status, level, setDistance]);
-
-  useFrame((state) => {
-      if (!playerObjRef.current) {
-          const group = state.scene.getObjectByName('PlayerGroup');
-          if (group && group.children.length > 0) {
-              playerObjRef.current = group.children[0];
-          }
-      }
-  });
-
-  useFrame((state, delta) => {
-    if (status !== GameStatus.PLAYING) return;
-
-    const safeDelta = Math.min(delta, 0.05); 
-    const dist = speed * safeDelta;
-    
-    distanceTraveled.current += dist;
-    const flooredDist = Math.floor(distanceTraveled.current);
-    if (flooredDist > lastReportedDistance.current) {
-        lastReportedDistance.current = flooredDist;
-        setDistance(flooredDist);
-    }
-
-    let hasChanges = false;
-    let playerPos = new THREE.Vector3(0, 0, 0);
-    
-    if (playerObjRef.current) {
-        playerObjRef.current.getWorldPosition(playerPos);
-    }
-
-    // 1. Move & Update Collectibles & Portals
-    const currentObjects = objectsRef.current;
-    const keptObjects: GameObject[] = [];
-
-    for (const obj of currentObjects) {
-        const moveAmount = dist;
-        const prevZ = obj.position[2];
-        obj.position[2] += moveAmount;
-
-        let keep = true;
-        if (obj.active) {
-            const zThreshold = 2.0; 
-            const inZZone = (prevZ < playerPos.z + zThreshold) && (obj.position[2] > playerPos.z - zThreshold);
-            
-            // SHOP PORTAL COLLISION
-            if (obj.type === ObjectType.SHOP_PORTAL) {
-                const dz = Math.abs(obj.position[2] - playerPos.z);
-                if (dz < 2) { 
-                     openShop();
-                     obj.active = false;
-                     hasChanges = true;
-                     keep = false; 
-                }
-            } else if (inZZone) {
-                // COLLECTIBLE PICKUP
-                const dx = Math.abs(obj.position[0] - playerPos.x);
-                if (dx < 0.95) {
-                     const dy = Math.abs(obj.position[1] - playerPos.y);
-                     if (dy < 2.5) {
-                        if (obj.type === ObjectType.GEM) {
-                            collectGem(obj.points || 50);
-                            audio.playGemCollect();
-                        }
-                        if (obj.type === ObjectType.LETTER && obj.targetIndex !== undefined) {
-                            collectLetter(obj.targetIndex);
-                            audio.playLetterCollect();
-                        }
-                        if (obj.type === ObjectType.SPEED_BOOST) {
-                            collectSpeedBoost();
-                            audio.playSpeedBoost();
-                        }
-                        
-                        window.dispatchEvent(new CustomEvent('particle-burst', { 
-                            detail: { 
-                                position: obj.position, 
-                                color: obj.color || '#ffffff' 
-                            } 
-                        }));
-
-                        obj.active = false;
-                        hasChanges = true;
-                     }
-                }
-            }
-        }
-
-        if (obj.position[2] > REMOVE_DISTANCE) {
-            keep = false;
-            hasChanges = true;
-        }
-
-        if (keep) {
-            keptObjects.push(obj);
-        }
-    }
-
-    // 2. Collectible Spawning Logic (Letters, Gems, Speed Boosts)
-    let furthestZ = -20;
-    if (keptObjects.length > 0) {
-        furthestZ = Math.min(...keptObjects.map(o => o.position[2]));
-    }
-
-    if (furthestZ > -SPAWN_DISTANCE) {
-         const minGap = 16 + (speed * 0.35); 
-         const spawnZ = Math.min(furthestZ - minGap, -SPAWN_DISTANCE);
-         
-         const isLetterDue = distanceTraveled.current >= nextLetterDistance.current;
-
-         if (isLetterDue) {
-             const lane = getRandomLane(laneCount);
-             const target = ['S','M','I','T'];
-             
-             const availableIndices = target.map((_, i) => i).filter(i => !collectedLetters.includes(i));
-
-             if (availableIndices.length > 0) {
-                 const chosenIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
-                 const val = target[chosenIndex];
-                 const color = GEMINI_COLORS[chosenIndex];
-
-                 keptObjects.push({
-                    id: uuidv4(),
-                    type: ObjectType.LETTER,
-                    position: [lane * LANE_WIDTH, 1.0, spawnZ], 
-                    active: true,
-                    color: color,
-                    value: val,
-                    targetIndex: chosenIndex
-                 });
-                 
-                 // Schedule next letter based on current level difficulty
-                 nextLetterDistance.current += getLetterInterval(level);
-                 hasChanges = true;
-             } else {
-                // Fallback to gem if all letters collected for this level
-                keptObjects.push({
-                    id: uuidv4(),
-                    type: ObjectType.GEM,
-                    position: [lane * LANE_WIDTH, 1.2, spawnZ],
-                    active: true,
-                    color: '#00ffff',
-                    points: 50
-                });
-                hasChanges = true;
-             }
-
-         } else if (Math.random() > 0.25) {
-            // Spawn Gems, Elevated Jump Gems, or Speed Boost power-ups
-            const lane = getRandomLane(laneCount);
-            const roll = Math.random();
-
-            if (roll < 0.22) {
-                // Speed Boost Power-Up
-                keptObjects.push({
-                    id: uuidv4(),
-                    type: ObjectType.SPEED_BOOST,
-                    position: [lane * LANE_WIDTH, 1.2, spawnZ],
-                    active: true,
-                    color: '#ff9100'
-                });
-            } else if (roll < 0.48) {
-                // High-Value Elevated Jump Gem
-                keptObjects.push({
-                    id: uuidv4(),
-                    type: ObjectType.GEM,
-                    position: [lane * LANE_WIDTH, 2.4, spawnZ],
-                    active: true,
-                    color: '#ffd700',
-                    points: 100
-                });
-            } else {
-                // Standard Ground Gem
-                keptObjects.push({
-                    id: uuidv4(),
-                    type: ObjectType.GEM,
-                    position: [lane * LANE_WIDTH, 1.2, spawnZ],
-                    active: true,
-                    color: '#00ffff',
-                    points: 50
-                });
-            }
-            hasChanges = true;
-         }
-    }
-
-    if (hasChanges) {
-        objectsRef.current = keptObjects;
-        setRenderTrigger(t => t + 1);
+  useFrame(() => {
+    if (runtime.version !== seen.current) {
+      seen.current = runtime.version;
+      setRenderTrigger(t => t + 1);
     }
   });
 
   return (
     <group>
       <ParticleSystem />
-      {objectsRef.current.map(obj => {
-        if (!obj.active) return null;
-        return <GameEntity key={obj.id} data={obj} />;
-      })}
+      {runtime.items.map(obj => <GameEntity key={obj.id} data={obj} />)}
     </group>
   );
 };

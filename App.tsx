@@ -15,6 +15,13 @@ import { Effects } from './components/World/Effects';
 import { HUD } from './components/UI/HUD';
 import { useStore } from './store';
 import { BASE_FOV, BOOST_FOV } from './types';
+import { runtime } from './sim/runtime';
+
+// Шаги правил (60 в секунду) — первыми в кадре, до отрисовки объектов
+const SimDriver = () => {
+  useFrame((_, delta) => runtime.update(delta));
+  return null;
+};
 
 const _targetPos = new THREE.Vector3();
 
@@ -106,6 +113,7 @@ function App() {
         // Initial camera, matches the controller base
         camera={{ position: [0, 5.5, 8], fov: 60 }}
       >
+        <SimDriver />
         <CameraController />
         <Suspense fallback={null}>
             <Scene />

@@ -8,13 +8,11 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '../../store';
-import { LANE_WIDTH, GameStatus } from '../../types';
-import { audio } from '../System/Audio';
+import { GameStatus } from '../../types';
+import { runtime } from '../../sim/runtime';
 import { ThrusterParticles } from './ThrusterParticles';
 
-// Physics Constants
-const GRAVITY = 50;
-const JUMP_FORCE = 16;
+// Полоса, прыжок, удары — в ядре (sim/core.js); здесь отрисовка и ввод.
 
 // --- Multi-Part Articulated Cyber-Robot Geometries ---
 // Head & Helmet
@@ -71,17 +69,10 @@ export const Player: React.FC = () => {
 
   const {
     status,
-    laneCount,
-    takeDamage,
-    hasDoubleJump,
-    activateImmortality,
     isImmortalityActive,
     isSpeedBoostActive,
     customRobotModelUrl
   } = useStore();
-
-  const [lane, setLane] = useState(0);
-  const targetX = useRef(0);
 
   // Optional Custom GLB Model Loader (for exported Tripo3D .glb files)
   const [customScene, setCustomScene] = useState<THREE.Group | null>(null);
@@ -148,17 +139,9 @@ export const Player: React.FC = () => {
     );
   }, [customRobotModelUrl]);
 
-  // Physics State
-  const isJumping = useRef(false);
-  const velocityY = useRef(0);
-  const jumpsPerformed = useRef(0);
   const spinRotation = useRef(0);
-
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
-
-  const isInvincible = useRef(false);
-  const lastDamageTime = useRef(0);
 
   // Memoized PBR Robot Materials (billing.smit34.ru Emerald & Slate Mecha Theme)
   const {
@@ -223,62 +206,18 @@ export const Player: React.FC = () => {
     };
   }, [isImmortalityActive, isSpeedBoostActive]);
 
-  // Reset State on Game Start
-  useEffect(() => {
-    if (status === GameStatus.PLAYING) {
-      isJumping.current = false;
-      jumpsPerformed.current = 0;
-      velocityY.current = 0;
-      spinRotation.current = 0;
-      if (groupRef.current) groupRef.current.position.y = 0;
-      if (bodyRef.current) bodyRef.current.rotation.x = 0;
-    }
-  }, [status]);
-
-  // Clamp lane if laneCount changes
-  useEffect(() => {
-    const maxLane = Math.floor(laneCount / 2);
-    if (Math.abs(lane) > maxLane) {
-      setLane((l) => Math.max(Math.min(l, maxLane), -maxLane));
-    }
-  }, [laneCount, lane]);
-
-  // Controls (Keyboard & Touch)
-  const triggerJump = () => {
-    const maxJumps = hasDoubleJump ? 2 : 1;
-
-    if (!isJumping.current) {
-      audio.playJump(false);
-      isJumping.current = true;
-      jumpsPerformed.current = 1;
-      velocityY.current = JUMP_FORCE;
-    } else if (jumpsPerformed.current < maxJumps) {
-      audio.playJump(true);
-      jumpsPerformed.current += 1;
-      velocityY.current = JUMP_FORCE;
-      spinRotation.current = 0;
-    }
-  };
-
+  // Ввод — в очередь действий ядра (применится в начале следующего шага)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (status !== GameStatus.PLAYING) return;
-      const maxLane = Math.floor(laneCount / 2);
-
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ф') {
-        setLane((l) => Math.max(l - 1, -maxLane));
-      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'в') {
-        setLane((l) => Math.min(l + 1, maxLane));
-      } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'ц') {
-        triggerJump();
-      } else if (e.key === ' ' || e.key === 'Enter') {
-        activateImmortality();
-      }
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ф') runtime.push('l');
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'в') runtime.push('r');
+      else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'ц') runtime.push('j');
+      else if (e.key === ' ' || e.key === 'Enter') runtime.push('i');
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [status, laneCount, hasDoubleJump, activateImmortality]);
+  }, [status]);
 
   useEffect(() => {
     const handleTouchStart = (e: TouchEvent) => {
@@ -290,15 +229,13 @@ export const Player: React.FC = () => {
       if (status !== GameStatus.PLAYING) return;
       const deltaX = e.changedTouches[0].clientX - touchStartX.current;
       const deltaY = e.changedTouches[0].clientY - touchStartY.current;
-      const maxLane = Math.floor(laneCount / 2);
 
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
-        if (deltaX > 0) setLane((l) => Math.min(l + 1, maxLane));
-        else setLane((l) => Math.max(l - 1, -maxLane));
+        runtime.push(deltaX > 0 ? 'r' : 'l');
       } else if (Math.abs(deltaY) > Math.abs(deltaX) && deltaY < -30) {
-        triggerJump();
+        runtime.push('j');
       } else if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
-        activateImmortality();
+        runtime.push('i');
       }
     };
 
@@ -308,7 +245,7 @@ export const Player: React.FC = () => {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [status, laneCount, hasDoubleJump, activateImmortality]);
+  }, [status]);
 
   // Animation Loop
   useFrame((state, delta) => {
@@ -319,39 +256,27 @@ export const Player: React.FC = () => {
       mixerRef.current.update(delta * (isSpeedBoostActive ? 1.5 : 1.0));
     }
 
-    // 1. Horizontal Position
-    targetX.current = lane * LANE_WIDTH;
-    const laneSwitchSpeed = isSpeedBoostActive ? 24 : 15;
-    groupRef.current.position.x = THREE.MathUtils.lerp(
-      groupRef.current.position.x,
-      targetX.current,
-      delta * laneSwitchSpeed
-    );
+    const p = runtime.player();
+    if (!p) return;
+    const jumping = p.jumping;
 
-    // 2. Physics (Jump)
-    if (isJumping.current) {
-      groupRef.current.position.y += velocityY.current * delta;
-      velocityY.current -= GRAVITY * delta;
-
-      if (groupRef.current.position.y <= 0) {
-        groupRef.current.position.y = 0;
-        isJumping.current = false;
-        jumpsPerformed.current = 0;
-        velocityY.current = 0;
-        if (bodyRef.current) bodyRef.current.rotation.x = 0;
-      }
-
-      if (jumpsPerformed.current === 2 && bodyRef.current) {
-        spinRotation.current -= delta * 15;
-        if (spinRotation.current < -Math.PI * 2) spinRotation.current = -Math.PI * 2;
-        bodyRef.current.rotation.x = spinRotation.current;
-      }
+    // 1–2. Положение и прыжок — из ядра (между двумя шагами)
+    groupRef.current.position.x = p.x;
+    groupRef.current.position.y = p.y;
+    if (!jumping) {
+      spinRotation.current = 0;
+      if (bodyRef.current) bodyRef.current.rotation.x = 0;
+    } else if (p.jumps === 2 && bodyRef.current) {
+      // кувырок при двойном прыжке — только вид
+      spinRotation.current -= delta * 15;
+      if (spinRotation.current < -Math.PI * 2) spinRotation.current = -Math.PI * 2;
+      bodyRef.current.rotation.x = spinRotation.current;
     }
 
     // Banking Rotation & Forward Sprint Lean
-    const xDiff = targetX.current - groupRef.current.position.x;
+    const xDiff = p.targetX - groupRef.current.position.x;
     groupRef.current.rotation.z = -xDiff * 0.22;
-    groupRef.current.rotation.x = isJumping.current
+    groupRef.current.rotation.x = jumping
       ? 0.12
       : isSpeedBoostActive
       ? 0.2
@@ -365,7 +290,7 @@ export const Player: React.FC = () => {
       coreCrystalRef.current.rotation.y += delta * 3;
     }
 
-    if (!isJumping.current) {
+    if (!jumping) {
       const stride = Math.sin(time);
       const oppStride = Math.sin(time + Math.PI);
 
@@ -440,7 +365,7 @@ export const Player: React.FC = () => {
         );
       }
 
-      if (bodyRef.current && jumpsPerformed.current !== 2) {
+      if (bodyRef.current && p.jumps !== 2) {
         bodyRef.current.position.y = 1.1;
       }
     }
@@ -449,7 +374,7 @@ export const Player: React.FC = () => {
     if (shadowRef.current) {
       const height = groupRef.current.position.y;
       const scale = Math.max(0.2, 1 - (height / 2.5) * 0.5);
-      const runStretch = isJumping.current ? 1 : 1 + Math.abs(Math.sin(time)) * 0.25;
+      const runStretch = jumping ? 1 : 1 + Math.abs(Math.sin(time)) * 0.25;
 
       shadowRef.current.scale.set(scale, scale, scale * runStretch);
       const material = shadowRef.current.material as THREE.MeshBasicMaterial;
@@ -458,37 +383,11 @@ export const Player: React.FC = () => {
       }
     }
 
-    // Invincibility / Immortality Flicker
-    const showFlicker = isInvincible.current || isImmortalityActive;
-    if (showFlicker) {
-      if (isInvincible.current) {
-        if (Date.now() - lastDamageTime.current > 1500) {
-          isInvincible.current = false;
-          groupRef.current.visible = true;
-        } else {
-          groupRef.current.visible = Math.floor(Date.now() / 50) % 2 === 0;
-        }
-      }
-      if (isImmortalityActive) {
-        groupRef.current.visible = true;
-      }
-    } else {
-      groupRef.current.visible = true;
-    }
+    // Мигание после удара (неуязвимость считает ядро); под щитом — без мигания
+    groupRef.current.visible = p.hurt && !isImmortalityActive
+      ? Math.floor(Date.now() / 50) % 2 === 0
+      : true;
   });
-
-  // Damage Handler
-  useEffect(() => {
-    const checkHit = () => {
-      if (isInvincible.current || isImmortalityActive) return;
-      audio.playDamage();
-      takeDamage();
-      isInvincible.current = true;
-      lastDamageTime.current = Date.now();
-    };
-    window.addEventListener('player-hit', checkHit);
-    return () => window.removeEventListener('player-hit', checkHit);
-  }, [takeDamage, isImmortalityActive]);
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
