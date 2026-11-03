@@ -10,6 +10,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { GameStatus } from '../../types';
 import { runtime } from '../../sim/runtime';
 import { ThrusterParticles } from './ThrusterParticles';
@@ -80,7 +81,7 @@ export const Player: React.FC = () => {
     isImmortalityActive,
     isSpeedBoostActive,
     customRobotModelUrl
-  } = useStore();
+  } = useStore(useShallow((s) => ({ status: s.status, isImmortalityActive: s.isImmortalityActive, isSpeedBoostActive: s.isSpeedBoostActive, customRobotModelUrl: s.customRobotModelUrl })));
 
   // GLB-модель робота: своя из меню или модель СмИТ по умолчанию
   const [customScene, setCustomScene] = useState<THREE.Group | null>(null);
@@ -143,7 +144,7 @@ export const Player: React.FC = () => {
               const sm = m as THREE.MeshStandardMaterial;
               if (sm.isMeshStandardMaterial) {
                 sm.envMap = studioEnv;
-                sm.envMapIntensity = 0.7;
+                sm.envMapIntensity = 0.85;   // в забеге без своего света — чуть больше отражения
                 sm.needsUpdate = true;
               }
             }
@@ -475,10 +476,8 @@ export const Player: React.FC = () => {
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
       {/* белый свет со стороны камеры: на заставке группа развёрнута к камере (поэтому -Z), в забеге камера сзади (+Z) */}
-      {status === GameStatus.MENU ? (
+      {status === GameStatus.MENU && (
         <pointLight position={[0.6, 1.9, -1.5]} intensity={3} distance={7} decay={1.6} color="#ffffff" />
-      ) : (
-        <pointLight position={[0.4, 2.4, 1.8]} intensity={2.2} distance={6} decay={1.6} color="#ffffff" />
       )}
       <group ref={bodyRef} position={[0, 1.1, 0]}>
         {customScene ? (

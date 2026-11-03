@@ -7,6 +7,7 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { GameStatus } from '../../types';
 
 const THRUSTER_PARTICLE_COUNT = 160;
@@ -35,7 +36,7 @@ const _emitterWorldPos = new THREE.Vector3();
 const _parentWorldPos = new THREE.Vector3();
 
 export const ThrusterParticles: React.FC = () => {
-  const { status, isSpeedBoostActive, speed } = useStore();
+  const { status, isSpeedBoostActive, speed } = useStore(useShallow((s) => ({ status: s.status, isSpeedBoostActive: s.isSpeedBoostActive, speed: s.speed })));
 
   const containerRef = useRef<THREE.Group>(null);
   const instancedMeshRef = useRef<THREE.InstancedMesh>(null);

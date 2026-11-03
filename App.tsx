@@ -14,6 +14,7 @@ import { ObstacleManager } from './components/World/ObstacleManager';
 import { Effects } from './components/World/Effects';
 import { HUD } from './components/UI/HUD';
 import { useStore } from './store';
+import { useShallow } from 'zustand/react/shallow';
 import { BASE_FOV, BOOST_FOV, GameStatus } from './types';
 import { runtime } from './sim/runtime';
 
@@ -23,13 +24,15 @@ const SimDriver = () => {
   return null;
 };
 
+// телефон: меньше пикселей и без теней — иначе на слабых экранах игра подтормаживает
+const COARSE = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 const _targetPos = new THREE.Vector3();
 const _menuLook = new THREE.Vector3();
 
 // Dynamic Camera Controller
 const CameraController = () => {
   const { camera, size } = useThree();
-  const { laneCount, isSpeedBoostActive, multiplier, status } = useStore();
+  const { laneCount, isSpeedBoostActive, multiplier, status } = useStore(useShallow((s) => ({ laneCount: s.laneCount, isSpeedBoostActive: s.isSpeedBoostActive, multiplier: s.multiplier, status: s.status })));
   const shakeIntensityRef = React.useRef(0);
   const lookRef = React.useRef(new THREE.Vector3(0, 0, -30));
 
@@ -127,8 +130,8 @@ function App() {
     <div className="relative w-full h-screen bg-black overflow-hidden select-none">
       <HUD />
       <Canvas
-        shadows
-        dpr={[1, 1.75]} 
+        shadows={!COARSE}
+        dpr={COARSE ? [1, 1.25] : [1, 1.75]} 
         gl={{ antialias: false, stencil: false, depth: true, powerPreference: "high-performance" }}
         // Initial camera, matches the controller base
         camera={{ position: [0, 5.5, 8], fov: 60 }}

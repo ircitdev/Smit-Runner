@@ -9,6 +9,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Text3D, Center, Float } from '@react-three/drei';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { GameObject, ObjectType, LANE_WIDTH } from '../../types';
 import { runtime } from '../../sim/runtime';
 
@@ -210,7 +211,7 @@ const GameEntity: React.FC<{ data: GameObject }> = React.memo(({ data }) => {
     const groupRef = useRef<THREE.Group>(null);
     const visualRef = useRef<THREE.Group>(null);
     const shadowRef = useRef<THREE.Mesh>(null);
-    const { laneCount } = useStore();
+    const { laneCount } = useStore(useShallow((s) => ({ laneCount: s.laneCount })));
     
     useFrame((state, delta) => {
         // 1. Move Main Container

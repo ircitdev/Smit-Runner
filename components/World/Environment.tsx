@@ -8,6 +8,7 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { LANE_WIDTH } from '../../types';
 
 const StarField: React.FC = () => {
@@ -92,7 +93,7 @@ const StarField: React.FC = () => {
 };
 
 const LaneGuides: React.FC = () => {
-    const { laneCount, speed, isSpeedBoostActive } = useStore();
+    const { laneCount, speed, isSpeedBoostActive } = useStore(useShallow((s) => ({ laneCount: s.laneCount, speed: s.speed, isSpeedBoostActive: s.isSpeedBoostActive })));
     const floorMatRef = useRef<THREE.ShaderMaterial>(null);
     const scrollOffsetRef = useRef(0);
     
@@ -272,7 +273,7 @@ const RetroSun: React.FC = () => {
 };
 
 const MovingGrid: React.FC = () => {
-    const { speed, laneCount, isSpeedBoostActive } = useStore();
+    const { speed, laneCount, isSpeedBoostActive } = useStore(useShallow((s) => ({ speed: s.speed, laneCount: s.laneCount, isSpeedBoostActive: s.isSpeedBoostActive })));
     const matRef = useRef<THREE.ShaderMaterial>(null);
     const scrollOffsetRef = useRef(0);
 
@@ -451,7 +452,7 @@ const _tempLightColorB = new THREE.Color();
 const LIGHT_ORB_GEO = new THREE.OctahedronGeometry(0.45, 1);
 
 const RhythmicPointLights: React.FC = () => {
-    const { speed, laneCount, isSpeedBoostActive } = useStore();
+    const { speed, laneCount, isSpeedBoostActive } = useStore(useShallow((s) => ({ speed: s.speed, laneCount: s.laneCount, isSpeedBoostActive: s.isSpeedBoostActive })));
 
     const sunLightRef = useRef<THREE.PointLight>(null);
     const nearBeatLightRef = useRef<THREE.PointLight>(null);

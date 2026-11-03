@@ -125,6 +125,9 @@ class Runtime {
     return v;
   }
 
+  private mirrorN = 0;
+
+
   private sync() {
     const g = this.game;
     const items: GameObject[] = [];
@@ -203,7 +206,14 @@ class Runtime {
       isImmortalityActive: g.shieldT > 0, isSpeedBoostActive: g.boostT > 0,
     };
     const patch: any = {};
-    for (const k of Object.keys(next)) if (st[k] !== next[k]) patch[k] = next[k];
+    // дистанция растёт каждый шаг: в хранилище — раз в 6 шагов (10 раз в секунду), иначе HUD
+    // перерисовывается 60 раз в секунду и на телефоне игра подтормаживает
+    this.mirrorN = (this.mirrorN + 1) % 6;
+    const lazy = this.mirrorN !== 0 && !g.over && !g.shop;
+    for (const k of Object.keys(next)) {
+      if (lazy && k === 'distance') continue;
+      if (st[k] !== next[k]) patch[k] = next[k];
+    }
     if (st.collectedLetters.join(',') !== g.letters.join(',')) patch.collectedLetters = g.letters.slice();
     if (Object.keys(patch).length) useStore.setState(patch);
   }

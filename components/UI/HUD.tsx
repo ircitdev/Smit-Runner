@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Zap, Wifi, Trophy, MapPin, Diamond, Rocket, ArrowUpCircle, Shield, Activity, PlusCircle, Play, CheckCircle2, Award } from 'lucide-react';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { GameStatus, GEMINI_COLORS, ShopItem, RUN_SPEED_BASE, ACHIEVEMENTS } from '../../types';
 import { audio } from '../System/Audio';
 
@@ -61,7 +62,7 @@ const SmitBrandHeader: React.FC<{ subtitle?: string }> = ({ subtitle }) => (
 );
 
 const ShopScreen: React.FC = () => {
-    const { score, buyItem, closeShop, hasDoubleJump, hasImmortality } = useStore();
+    const { score, buyItem, closeShop, hasDoubleJump, hasImmortality } = useStore(useShallow((s) => ({ score: s.score, buyItem: s.buyItem, closeShop: s.closeShop, hasDoubleJump: s.hasDoubleJump, hasImmortality: s.hasImmortality })));
     const [items, setItems] = useState<ShopItem[]>([]);
 
     useEffect(() => {
@@ -152,7 +153,7 @@ export const HUD: React.FC = () => {
     speed,
     customRobotModelUrl,
     setCustomRobotModelUrl
-  } = useStore();
+  } = useStore(useShallow((s) => ({ score: s.score, lives: s.lives, maxLives: s.maxLives, collectedLetters: s.collectedLetters, status: s.status, level: s.level, restartGame: s.restartGame, startGame: s.startGame, setStatus: s.setStatus, gemsCollected: s.gemsCollected, distance: s.distance, maxDistance: s.maxDistance, combo: s.combo, maxCombo: s.maxCombo, multiplier: s.multiplier, lastComboAt: s.lastComboAt, lastDodgeCloseCall: s.lastDodgeCloseCall, unlockedAchievements: s.unlockedAchievements, sessionAchievements: s.sessionAchievements, activeAchievement: s.activeAchievement, achievementTriggerCount: s.achievementTriggerCount, isImmortalityActive: s.isImmortalityActive, isSpeedBoostActive: s.isSpeedBoostActive, speed: s.speed, customRobotModelUrl: s.customRobotModelUrl, setCustomRobotModelUrl: s.setCustomRobotModelUrl })));
   const target = ['S', 'M', 'I', 'T'];
   const [customModelName, setCustomModelName] = useState<string | null>(null);
   const [isGlitchBurst, setIsGlitchBurst] = useState(false);

@@ -10,12 +10,15 @@ import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@re
 import { BlendFunction, ChromaticAberrationEffect } from 'postprocessing';
 import * as THREE from 'three';
 import { useStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
+
+const COARSE = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
 export const Effects: React.FC = () => {
   const chromaticRef = useRef<ChromaticAberrationEffect>(null);
   const impactPulseRef = useRef(0);
   const initialOffset = useMemo(() => new THREE.Vector2(0.0008, 0.0004), []);
-  const { isSpeedBoostActive, multiplier } = useStore();
+  const { isSpeedBoostActive, multiplier } = useStore(useShallow((s) => ({ isSpeedBoostActive: s.isSpeedBoostActive, multiplier: s.multiplier })));
 
   useEffect(() => {
     const triggerChromaticBurst = () => {
@@ -63,7 +66,7 @@ export const Effects: React.FC = () => {
         mipmapBlur 
         intensity={1.05} 
         radius={0.62}
-        levels={8}
+        levels={COARSE ? 5 : 8}
       />
       <ChromaticAberration
         ref={chromaticRef}
@@ -72,7 +75,7 @@ export const Effects: React.FC = () => {
         radialModulation={false}
         modulationOffset={0.15}
       />
-      <Noise opacity={0.05} blendFunction={BlendFunction.OVERLAY} />
+      {COARSE ? <></> : <Noise opacity={0.05} blendFunction={BlendFunction.OVERLAY} />}
       <Vignette eskil={false} offset={0.1} darkness={0.5} />
     </EffectComposer>
   );
